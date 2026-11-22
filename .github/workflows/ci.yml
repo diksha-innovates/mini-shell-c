@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cmake/ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Install cmake/ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Configure + build + test (Debug)
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+      - name: Configure + build + test (ASan)
+        run: |
+          cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
+          cmake --build build-asan
+          ctest --test-dir build-asan --output-on-failure
+
+      - name: Configure + build + test (UBSan)
+        run: |
+          cmake -S . -B build-ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_UBSAN=ON
+          cmake --build build-ubsan
+          ctest --test-dir build-ubsan --output-on-failure
+
+      - name: Python integration tests
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r tests/python/requirements.txt
+          MINISHELL_BIN="$PWD/build/minishell" .venv/bin/python -m pytest tests/python -v
